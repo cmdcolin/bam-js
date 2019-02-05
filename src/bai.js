@@ -1,5 +1,6 @@
 const Long = require('long')
-const VirtualOffset = require('./virtualOffset')
+const { Parser } = require('@gmod/binary-parser')
+// const VirtualOffset = require('./virtualOffset')
 const Chunk = require('./chunk')
 
 const BAI_MAGIC = 21578050 // BAI\1
@@ -25,13 +26,6 @@ class BAI {
     }
   }
 
-  parsePseudoBin(bytes, offset) {
-    const lineCount = longToNumber(
-      Long.fromBytesLE(bytes.slice(offset + 20, offset + 28), true),
-    )
-    return { lineCount }
-  }
-
   async lineCount(refId) {
     const index = (await this.parse()).indices[refId]
     if (!index) {
@@ -41,65 +35,74 @@ class BAI {
     return ret.lineCount === undefined ? -1 : ret.lineCount
   }
 
+  async detectEndianness() {
+    const buf = Buffer.allocUnsafe(4)
+    await this.filehandle.read(buf, 0, 4, 0)
+    let ret = buf.readInt32LE(0)
+    if (ret === BAI_MAGIC) {
+      this.isBigEndian = false
+      return
+    }
+    ret = buf.readInt32BE(0)
+    if (ret === BAI_MAGIC) {
+      this.isBigEndian = true
+      return
+    }
+    throw new Error('not a BAI file')
+  }
+
   // memoize
   // fetch and parse the index
   async parse() {
     const data = { bai: true, maxBlockSize: 1 << 16 }
+    await this.detectEndianess
+    const le = this.isBigEndian ? 'big' : 'little'
+
     const bytes = await this.filehandle.readFile()
+    const p = new Parser()
+      .endianess(le)
+      .uint32('magic')
+      .int32('n_ref')
+      .array('indices', {
+        length: 'n_ref',
+        type: new Parser()
+          .int32('n_bin')
+          .array('binIndex', {
+            length: 'n_bin',
+            type: new Parser()
+              .uint32('bin')
+              .int32('n_chunk')
+              .array('chunks', {
+                length: 'n_chunk',
+                type: new Parser()
+                  .buffer('u', { length: 8 })
+                  .buffer('v', { length: 8 }),
+              }),
+          })
+          .int32('n_intv')
+          .array('intervals', {
+            length: 'n_intv',
+            type: new Parser().buffer('interval', { length: 8 }),
+          }),
+      })
+    const ret = p.parse(bytes).result
+    ret.bai = true
+    ret.maxBlockSize = 1 << 16
 
-    // check BAI magic numbers
-    if (bytes.readUInt32LE(0) !== BAI_MAGIC) {
-      throw new Error('Not a BAI file')
-    }
-
-    data.refCount = bytes.readInt32LE(4)
+    // parse pseudo bins
     const depth = 5
     const binLimit = ((1 << ((depth + 1) * 3)) - 1) / 7
-
-    // read the indexes for each reference sequence
-    data.indices = new Array(data.refCount)
-    let currOffset = 8
-    for (let i = 0; i < data.refCount; i += 1) {
-      // the binning index
-      const binCount = bytes.readInt32LE(currOffset)
-      let stats
-
-      currOffset += 4
-      const binIndex = {}
-      for (let j = 0; j < binCount; j += 1) {
-        const bin = bytes.readUInt32LE(currOffset)
-        if (bin > binLimit) {
-          stats = this.parsePseudoBin(bytes, currOffset + 4)
+    ret.indices && ret.indices.forEach(index => {
+      index.bins && index.bins.forEach(bin => {
+        if (bin.bin > binLimit) {
+          index.stats = {
+            lineCount: longToNumber(Long.fromBytesLE(bin.chunks[1].u)),
+          }
         }
+      })
+    })
 
-        const chunkCount = bytes.readInt32LE(currOffset + 4)
-        currOffset += 8
-        const chunks = new Array(chunkCount)
-        for (let k = 0; k < chunkCount; k += 1) {
-          const u = VirtualOffset.fromBytes(bytes, currOffset)
-          const v = VirtualOffset.fromBytes(bytes, currOffset + 8)
-          currOffset += 16
-          this._findFirstData(data, u)
-          chunks[k] = new Chunk(u, v, bin)
-        }
-        binIndex[bin] = chunks
-      }
-
-      const nintv = bytes.readInt32LE(currOffset)
-      currOffset += 4
-      // as we're going through the linear index, figure out
-      // the smallest virtual offset in the indexes, which
-      // tells us where the BAM header ends
-      if (nintv) {
-        this._findFirstData(bytes, VirtualOffset.fromBytes(bytes, currOffset))
-      }
-
-      currOffset += nintv * 8
-
-      data.indices[i] = { binIndex, stats }
-    }
-
-    return data
+    return ret
   }
 
   async blocksForRange(refId, beg, end) {
@@ -113,6 +116,7 @@ class BAI {
     const { binIndex } = indexes
 
     const bins = this.reg2bins(beg, end)
+    console.log(binIndex,bins)
 
     let l
     let numOffsets = 0
