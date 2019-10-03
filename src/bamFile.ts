@@ -29,8 +29,6 @@ export default class BamFile {
   private bam: GenericFilehandle
   private index: IndexFile
   private featureCache: any
-  private chunkSizeLimit: number
-  private fetchSizeLimit: number
   private header: any
   private chrToIndex: any
   private indexToChr: any
@@ -53,8 +51,6 @@ export default class BamFile {
     csiFilehandle,
     csiUrl,
     cacheSize,
-    fetchSizeLimit,
-    chunkSizeLimit,
     renameRefSeqs = n => n,
   }: {
     bamFilehandle?: G
@@ -67,8 +63,6 @@ export default class BamFile {
     csiFilehandle?: G
     csiUrl?: string
     cacheSize?: number
-    fetchSizeLimit?: number
-    chunkSizeLimit?: number
     renameRefSeqs?: (a: string) => string
   }) {
     this.renameRefSeq = renameRefSeqs
@@ -107,9 +101,6 @@ export default class BamFile {
       }),
       fill: this._readChunk.bind(this),
     })
-
-    this.fetchSizeLimit = fetchSizeLimit || 50000000
-    this.chunkSizeLimit = chunkSizeLimit || 10000000
   }
 
   async getHeader(abortSignal?: AbortSignal) {
@@ -230,21 +221,6 @@ export default class BamFile {
       }
     }
 
-    for (let i = 0; i < chunks.length; i += 1) {
-      await abortBreakPoint(opts.signal)
-      const size = chunks[i].fetchedSize()
-      if (size > this.chunkSizeLimit) {
-        throw new Error(
-          `Too many BAM features. BAM chunk size ${size} bytes exceeds chunkSizeLimit of ${this.chunkSizeLimit}`,
-        )
-      }
-    }
-
-    const totalSize = chunks.map((s: Chunk) => s.fetchedSize()).reduce((a: number, b: number) => a + b, 0)
-    if (totalSize > this.fetchSizeLimit)
-      throw new Error(
-        `data size of ${totalSize.toLocaleString()} bytes exceeded fetch size limit of ${this.fetchSizeLimit.toLocaleString()} bytes`,
-      )
     yield* this._fetchChunkFeatures(chunks, chrId, min, max, opts)
   }
 
@@ -330,11 +306,6 @@ export default class BamFile {
     const mateFeatPromises: Promise<BAMFeature[]>[] = []
 
     const mateTotalSize = mateChunks.map(s => s.fetchedSize()).reduce((a, b) => a + b, 0)
-    if (mateTotalSize > this.fetchSizeLimit) {
-      throw new Error(
-        `data size of ${mateTotalSize.toLocaleString()} bytes exceeded fetch size limit of ${this.fetchSizeLimit.toLocaleString()} bytes`,
-      )
-    }
     mateChunks.forEach(c => {
       const recordPromise = this.featureCache.get(c.toString(), c, opts.signal)
       mateRecordPromises.push(recordPromise)
