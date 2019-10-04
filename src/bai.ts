@@ -174,20 +174,20 @@ export default class BAI extends IndexFile {
 
     off = off.sort((a, b) => a.compareTo(b))
 
-    // resolve completely contained adjacent blocks
-    l = 0
-    for (let i = 1; i < numOffsets; i += 1) {
-      if (off[l].maxv.compareTo(off[i].maxv) < 0) {
-        l += 1
-        off[l].minv = off[i].minv
-        off[l].maxv = off[i].maxv
-      }
-    }
-    numOffsets = l + 1
+//     // resolve completely contained adjacent blocks
+//     l = 0
+//     for (let i = 1; i < numOffsets; i += 1) {
+//       if (off[l].maxv.compareTo(off[i].maxv) < 0) {
+//         l += 1
+//         off[l].minv = off[i].minv
+//         off[l].maxv = off[i].maxv
+//       }
+//     }
+//     numOffsets = l + 1
 
-    // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
-    for (let i = 1; i < numOffsets; i += 1)
-      if (off[i - 1].maxv.compareTo(off[i].minv) >= 0) off[i - 1].maxv = off[i].minv
+//     // resolve overlaps between adjacent blocks; this may happen due to the merge in indexing
+//     for (let i = 1; i < numOffsets; i += 1)
+//       if (off[i - 1].maxv.compareTo(off[i].minv) >= 0) off[i - 1].maxv = off[i].minv
 
     // merge adjacent blocks
     l = 0
