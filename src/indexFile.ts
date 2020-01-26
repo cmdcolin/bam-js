@@ -6,6 +6,7 @@ import Chunk from './chunk'
 
 export default abstract class IndexFile {
   public filehandle: GenericFilehandle
+  public indexindex?: Promise<string> | string
   public renameRefSeq: Function
   private _parseCache: any
 
@@ -15,12 +16,15 @@ export default abstract class IndexFile {
    */
   constructor({
     filehandle,
+    indexindex,
     renameRefSeq = (n: string) => n,
   }: {
     filehandle: GenericFilehandle
+    indexindex?: Promise<string> | string
     renameRefSeq?: (a: string) => string
   }) {
     this.filehandle = filehandle
+    this.indexindex = indexindex
     this.renameRefSeq = renameRefSeq
   }
   public abstract async lineCount(refId: number): Promise<number>

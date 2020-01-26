@@ -16,7 +16,6 @@ import { abortBreakPoint, checkAbortSignal, timeout } from './util'
 const BAM_MAGIC = 21840194
 
 const blockLen = 1 << 16
-type G = GenericFilehandle
 
 interface BamOpts {
   viewAsPairs?: boolean
@@ -53,20 +52,28 @@ export default class BamFile {
     csiPath,
     csiFilehandle,
     csiUrl,
+    bamIndexIndexFilehandle,
+    bamIndexIndexPath,
+    bamIndexIndexUrl,
+    bamIndexIndex,
     cacheSize,
     fetchSizeLimit,
     chunkSizeLimit,
     renameRefSeqs = n => n,
   }: {
-    bamFilehandle?: G
+    bamFilehandle?: GenericFilehandle
     bamPath?: string
     bamUrl?: string
     baiPath?: string
-    baiFilehandle?: G
+    baiFilehandle?: GenericFilehandle
     baiUrl?: string
     csiPath?: string
-    csiFilehandle?: G
+    csiFilehandle?: GenericFilehandle
     csiUrl?: string
+    bamIndexIndexPath?: string
+    bamIndexIndexUrl?: string
+    bamIndexIndexFilehandle?: GenericFilehandle
+    bamIndexIndex?: string
     cacheSize?: number
     fetchSizeLimit?: number
     chunkSizeLimit?: number
@@ -83,6 +90,18 @@ export default class BamFile {
     } else {
       throw new Error('unable to initialize bam')
     }
+
+    let indexindex: undefined | Promise<string> | string
+    if (bamIndexIndexFilehandle) {
+      indexindex = bamIndexIndexFilehandle.readFile('utf8') as Promise<string>
+    } else if (bamIndexIndexPath) {
+      indexindex = new LocalFile(bamIndexIndexPath).readFile('utf8') as Promise<string>
+    } else if (bamIndexIndexUrl) {
+      indexindex = new RemoteFile(bamIndexIndexUrl).readFile('utf8') as Promise<string>
+    } else if (bamIndexIndex) {
+      indexindex = bamIndexIndex
+    }
+
     if (csiFilehandle) {
       this.index = new CSI({ filehandle: csiFilehandle })
     } else if (csiPath) {
@@ -90,18 +109,19 @@ export default class BamFile {
     } else if (csiUrl) {
       this.index = new CSI({ filehandle: new RemoteFile(csiUrl) })
     } else if (baiFilehandle) {
-      this.index = new BAI({ filehandle: baiFilehandle })
+      this.index = new BAI({ filehandle: baiFilehandle, indexindex })
     } else if (baiPath) {
-      this.index = new BAI({ filehandle: new LocalFile(baiPath) })
+      this.index = new BAI({ filehandle: new LocalFile(baiPath), indexindex })
     } else if (baiUrl) {
-      this.index = new BAI({ filehandle: new RemoteFile(baiUrl) })
+      this.index = new BAI({ filehandle: new RemoteFile(baiUrl), indexindex })
     } else if (bamPath) {
-      this.index = new BAI({ filehandle: new LocalFile(`${bamPath}.bai`) })
+      this.index = new BAI({ filehandle: new LocalFile(`${bamPath}.bai`), indexindex })
     } else if (bamUrl) {
-      this.index = new BAI({ filehandle: new RemoteFile(`${bamUrl}.bai`) })
+      this.index = new BAI({ filehandle: new RemoteFile(`${bamUrl}.bai`), indexindex })
     } else {
       throw new Error('unable to infer index format')
     }
+
     this.featureCache = new AbortablePromiseCache({
       cache: new LRU({
         maxSize: cacheSize !== undefined ? cacheSize : 50,
