@@ -114,10 +114,10 @@ export default class BamFile {
 
   async getHeader(abortSignal?: AbortSignal) {
     const indexData = await this.index.parse(abortSignal)
-    const ret = indexData.firstDataLine ? indexData.firstDataLine.blockPosition + 65535 : undefined
+    const ret = indexData.firstDataLine ? indexData.firstDataLine.blockPosition : undefined
     let buffer
     if (ret) {
-      const res = await this.bam.read(Buffer.alloc(ret + blockLen), 0, ret + blockLen, 0, {
+      const res = await this.bam.read(Buffer.alloc(ret), 0, ret + blockLen, 0, {
         signal: abortSignal,
       })
       const { bytesRead } = res
