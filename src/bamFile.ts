@@ -1,18 +1,17 @@
+import { LocalFile, RemoteFile, GenericFilehandle } from 'generic-filehandle'
+import { unzip } from '@gmod/bgzf-filehandle'
 import AbortablePromiseCache from 'abortable-promise-cache'
-import BAI from './bai'
-import CSI from './csi'
-import Chunk from './chunk'
-import crc32 from 'buffer-crc32'
-
-import { unzip, unzipChunkSlice } from '@gmod/bgzf-filehandle'
-
 import entries from 'object.entries-ponyfill'
 import LRU from 'quick-lru'
-import { LocalFile, RemoteFile, GenericFilehandle } from 'generic-filehandle'
+import crc32 from 'buffer-crc32'
+
 import BAMFeature from './record'
 import IndexFile, { BaseOpts } from './indexFile'
 import { parseHeaderText } from './sam'
-import { abortBreakPoint, checkAbortSignal, timeout } from './util'
+import BAI from './bai'
+import CSI from './csi'
+import Chunk from './chunk'
+import { abortBreakPoint, checkAbortSignal } from './util'
 
 export const BAM_MAGIC = 21840194
 
@@ -133,7 +132,7 @@ export default class BamFile {
       buffer = (await this.bam.readFile(opts)) as Buffer
     }
 
-    const uncba = await unzip(buffer)
+    const uncba = Buffer.from(await unzip(buffer))
 
     if (uncba.readInt32LE(0) !== BAM_MAGIC) {
       throw new Error('Not a BAM file')
@@ -173,6 +172,7 @@ export default class BamFile {
       buffer = buffer.slice(0, refSeqBytes)
     }
     const uncba = await unzip(buffer)
+    console.log({ uncba, start })
     const nRef = uncba.readInt32LE(start)
     let p = start + 4
     const chrToIndex: { [key: string]: number } = {}
@@ -411,26 +411,26 @@ export default class BamFile {
       buffer = buffer.slice(0, bufsize)
     }
 
-    const { buffer: data, cpositions, dpositions } = await unzipChunkSlice(buffer, chunk)
+    const data = await unzip(buffer)
     checkAbortSignal(abortSignal)
-    return { data, cpositions, dpositions, chunk }
+    return { data: data.slice(c.minv.dataPosition), cpositions: null, dpositions: null, chunk }
   }
 
   async readBamFeatures(ba: Buffer, cpositions: number[], dpositions: number[], chunk: Chunk) {
     let blockStart = 0
     const sink = []
-    let pos = 0
-    let featsSinceLastTimeout = 0
+    const pos = 0
+    // const featsSinceLastTimeout = 0
 
     while (blockStart + 4 < ba.length) {
       const blockSize = ba.readInt32LE(blockStart)
       const blockEnd = blockStart + 4 + blockSize - 1
 
       // increment position to the current decompressed status
-      if (dpositions) {
-        while (blockStart + chunk.minv.dataPosition >= dpositions[pos++]) {}
-        pos--
-      }
+      // if (dpositions) {
+      //   while (blockStart + chunk.minv.dataPosition >= dpositions[pos++]) {}
+      //   pos--
+      // }
 
       // only try to read the feature if we have all the bytes for it
       if (blockEnd < ba.length) {
@@ -462,11 +462,11 @@ export default class BamFile {
         })
 
         sink.push(feature)
-        featsSinceLastTimeout++
-        if (featsSinceLastTimeout > 500) {
-          await timeout(1)
-          featsSinceLastTimeout = 0
-        }
+        // featsSinceLastTimeout++
+        // if (featsSinceLastTimeout > 500) {
+        //   await timeout(1)
+        //   featsSinceLastTimeout = 0
+        // }
       }
 
       blockStart = blockEnd + 1
